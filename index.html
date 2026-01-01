@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>退休倒數日曆</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;700;900&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'retro-paper': '#fdfbf7',
+                        'retro-green': '#009e46',
+                        'retro-red': '#e3002b',
+                        'retro-ink': '#2b2b2b',
+                    },
+                    fontFamily: {
+                        serif: ['"Noto Serif TC"', 'serif'],
+                    },
+                    boxShadow: {
+                        'paper': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05), 5px 5px 0px 0px rgba(0,0,0,0.1)',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #333;
+            background-image: radial-gradient(#444 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .calendar-hole {
+            background: #333;
+            box-shadow: inset 1px 1px 2px rgba(0,0,0,0.5);
+        }
+        .tear-off-effect {
+            mask-image: linear-gradient(180deg, black 95%, transparent 100%);
+            border-bottom: 2px dashed #d1d5db;
+        }
+        .vertical-text {
+            writing-mode: vertical-rl;
+            text-orientation: upright;
+            letter-spacing: 0.1em;
+        }
+        
+        /* Animation Classes */
+        @keyframes tearOff {
+            0% { transform: rotate(0deg); transform-origin: top left; opacity: 1; }
+            20% { transform: rotate(-5deg); transform-origin: top left; opacity: 1; }
+            100% { transform: translateY(150%) rotate(20deg); transform-origin: top left; opacity: 0; }
+        }
+        @keyframes pasteBack {
+            0% { transform: translateY(-120%) rotate(-10deg); opacity: 0; }
+            100% { transform: translateY(0) rotate(0deg); opacity: 1; }
+        }
+
+        .animating-clone {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #fdfbf7;
+            z-index: 50;
+            pointer-events: none;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            mask-image: linear-gradient(180deg, black 95%, transparent 100%);
+            border-bottom: 2px dashed #d1d5db;
+        }
+
+        .animate-tear-off {
+            animation: tearOff 0.8s ease-in forwards;
+        }
+        .animate-paste-back {
+            animation: pasteBack 0.6s ease-out forwards;
+        }
+
+        .nav-btn {
+            opacity: 0;
+            transition: opacity 0.3s ease, transform 0.2s;
+        }
+        .calendar-container:hover .nav-btn {
+            opacity: 1;
+        }
+        @media (hover: none) {
+            .nav-btn {
+                opacity: 0.6;
+            }
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888; 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #555; 
+        }
+
+        /* PRINT STYLES */
+        @media print {
+            body {
+                background: white !important;
+                display: block !important;
+                height: auto !important;
+                padding: 0 !important;
+                overflow: visible !important;
+            }
+            .no-print {
+                display: none !important;
+            }
+            /* Hide the main interactive app */
+            .calendar-container {
+                display: none !important;
+            }
+            /* Show the print area */
+            #print-area {
+                display: block !important;
+            }
+            
+            /* Grid Layout for "Cut Mode" */
+            .print-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr); /* 2 cols */
+                gap: 10px;
+                padding: 10px;
+            }
+            .print-card {
+                border: 2px dashed #ccc;
+                padding: 10px;
+                page-break-inside: avoid;
+                background: #fff;
+                height: 300px; /* Fixed height for consistency */
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: space-between;
+            }
+
+            /* List Layout for "Paper Saving Mode" */
+            .print-list {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            .print-list th, .print-list td {
+                border: 1px solid #ccc;
+                padding: 8px;
+                text-align: left;
+                font-size: 12px;
+            }
+            .print-list th {
+                background-color: #f0f0f0;
+            }
+            
+            /* Ensure colors print */
+            * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center font-serif p-2 overflow-x-hidden">
+
+    <!-- Interactive Calendar Container -->
+    <div class="relative w-full max-w-md mx-auto calendar-container">
+        
+        <!-- Metal Clamp -->
+        <div class="absolute -top-3 left-0 right-0 h-8 bg-gray-300 rounded-t-lg z-20 flex justify-center items-center shadow-md mx-4 border-b border-gray-400">
+            <div class="w-full flex justify-between px-8">
+                <div class="w-3 h-3 rounded-full calendar-hole"></div>
+                <div class="w-3 h-3 rounded-full calendar-hole"></div>
+            </div>
+        </div>
+
+        <!-- Navigation Buttons -->
+        <button onclick="changeDay(-1)" class="nav-btn absolute -left-12 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/10 hover:bg-white/30 text-white/50 hover:text-white rounded-full flex items-center justify-center backdrop-blur-sm z-30 transition md:flex hidden" title="前一天 (←)">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+        <button onclick="changeDay(1)" class="nav-btn absolute -right-12 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/10 hover:bg-white/30 text-white/50 hover:text-white rounded-full flex items-center justify-center backdrop-blur-sm z-30 transition md:flex hidden" title="後一天 (→)">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+            </svg>
+        </button>
+
+        <div onclick="changeDay(-1)" class="absolute top-0 bottom-0 left-0 w-12 z-20 md:hidden"></div>
+        <div onclick="changeDay(1)" class="absolute top-0 bottom-0 right-0 w-12 z-20 md:hidden"></div>
+
+        <!-- The Calendar Page Wrapper -->
+        <div id="calendar-wrapper" class="bg-retro-paper text-retro-ink w-full rounded-sm shadow-paper pt-5 pb-2 relative">
+            
+            <div id="calendar-content" class="tear-off-effect min-h-[300px] flex flex-col relative bg-retro-paper">
+                
+                <!-- Personalized Title Area -->
+                <div class="text-center mt-1 px-4">
+                    <h1 id="calendar-title" class="text-base font-bold text-gray-800 border-b border-gray-300 pb-1 tracking-widest">
+                        退休倒數日曆
+                    </h1>
+                </div>
+
+                <!-- Header: Date Info -->
+                <div class="flex justify-between items-end px-6 py-1 border-b-2 border-retro-green/30 mt-0">
+                    <div class="text-lg font-bold text-retro-green">
+                        民國 <span id="roc-year">115</span> 年
+                    </div>
+                    <div class="text-2xl font-bold tracking-widest text-retro-green">
+                        <span id="month-num">1</span> 月
+                    </div>
+                    <div class="text-xs text-gray-500 font-normal pb-1">
+                        國曆 <span id="lunar-date">...</span>
+                    </div>
+                </div>
+
+                <!-- Main Body -->
+                <div class="flex relative mt-1 flex-1">
+                    
+                    <!-- Left Column: Countdown Info 1 -->
+                    <div class="w-1/6 flex justify-center pt-2">
+                        <div class="vertical-text text-xs text-gray-600 font-bold border-l-2 border-red-100 pl-1 h-3/4">
+                            距離退休還有
+                        </div>
+                    </div>
+
+                    <!-- Center: BIG DAY -->
+                    <div class="w-4/6 flex flex-col items-center justify-start pt-1">
+                        <div id="day-num" class="text-[6rem] leading-none font-black text-retro-ink drop-shadow-sm font-sans scale-y-110 -mb-1">
+                            1
+                        </div>
+                        <div id="week-day" class="text-xl font-bold text-retro-ink mt-0 border-2 border-retro-ink rounded-full w-10 h-10 flex items-center justify-center">
+                            四
+                        </div>
+                         <div id="daily-motto" class="mt-2 w-full text-center px-1 text-base font-bold text-gray-700 leading-snug font-serif tracking-wide flex items-center justify-center min-h-[2.5rem]">
+                            今日事今日畢...
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Countdown Info 2 -->
+                    <div class="w-1/6 flex justify-center pt-2">
+                        <div class="vertical-text text-sm text-retro-green font-bold h-3/4">
+                            <span id="countdown-days-sidebar">剩餘...天</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Bottom Section -->
+                <div class="mx-4 mt-0 mb-2 border-t-2 border-retro-green/50 pt-1">
+                    <div class="flex items-center">
+                        <div class="w-10 flex flex-col items-center justify-center border-r-2 border-retro-green/30 pr-2">
+                            <div class="w-6 h-6 rounded-full bg-retro-green text-white flex items-center justify-center font-bold text-xs mb-1">宜</div>
+                            <div class="text-[10px] text-center text-gray-600 font-bold leading-tight">期待<br>未來</div>
+                        </div>
+                        
+                        <div class="flex-1 pl-3 flex flex-col justify-center">
+                            <div id="countdown-detail" class="text-base font-bold text-gray-800 leading-tight mb-0.5">
+                                請先設定退休日
+                            </div>
+                            <div id="semester-detail" class="text-xs text-gray-600">
+                                <!-- JS will fill -->
+                            </div>
+                        </div>
+                        
+                        <div class="w-14 flex flex-col items-center justify-center border-l-2 border-retro-green/30 pl-2">
+                            <div class="flex space-x-1 mb-1">
+                                <!-- Changed Print Button to open Modal -->
+                                <button onclick="togglePrintModal()" class="w-7 h-7 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center justify-center transition" title="列印中心">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <button onclick="toggleSettings()" class="w-7 h-7 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300 flex items-center justify-center transition" title="設定">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                            </button>
+                            <div class="text-[10px] text-center text-gray-400 mt-0.5">操作</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-green-50 text-center py-1 text-retro-green text-[10px] font-bold border-t border-dashed border-gray-300">
+                     美好退休生活，倒數計時中。
+                </div>
+            </div>
+            
+            <button id="reset-today-btn" onclick="resetToToday()" class="hidden absolute top-2 right-2 text-xs bg-retro-red text-white px-2 py-1 rounded shadow hover:bg-red-700 transition z-40">
+                回今天
+            </button>
+        </div>
+
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="hidden absolute inset-0 bg-black/80 flex items-center justify-center z-50 rounded-sm backdrop-blur-sm">
+            <div class="bg-white p-6 rounded-lg w-4/5 shadow-2xl border-4 border-retro-green">
+                <h3 class="text-xl font-bold text-center mb-4 text-retro-ink">設定您的日曆</h3>
+                <div class="mb-4">
+                    <label class="block text-sm font-bold mb-2 text-gray-700">您的姓名 (選填)：</label>
+                    <input type="text" id="teacher-name-input" placeholder="例如：王小明" class="w-full p-2 border-2 border-gray-300 rounded focus:border-retro-green focus:outline-none mb-1">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-sm font-bold mb-2 text-gray-700">預計退休日：</label>
+                    <input type="date" id="retire-date-input" class="w-full p-2 border-2 border-gray-300 rounded focus:border-retro-green focus:outline-none">
+                </div>
+                <div class="flex justify-between mt-6">
+                     <button onclick="toggleSettings()" class="px-4 py-2 text-gray-500 hover:text-gray-700 text-sm">取消</button>
+                    <button onclick="saveSettings()" class="px-6 py-2 bg-retro-red text-white font-bold rounded shadow-md hover:bg-red-700 transition">儲存設定</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Print Modal -->
+        <div id="print-modal" class="hidden absolute inset-0 bg-black/80 flex items-center justify-center z-50 rounded-sm backdrop-blur-sm">
+            <div class="bg-white p-5 rounded-lg w-11/12 shadow-2xl border-4 border-gray-600">
+                <h3 class="text-lg font-bold text-center mb-3 text-retro-ink border-b pb-2">列印中心</h3>
+                
+                <div class="space-y-3 mb-4">
+                    <div>
+                        <label class="block text-sm font-bold mb-1 text-gray-700">列印內容：</label>
+                        <select id="print-mode" class="w-full p-2 border border-gray-300 rounded text-sm">
+                            <option value="current">僅列印當前顯示的這一天</option>
+                            <option value="grid">日曆模式 (多日/方便剪裁)</option>
+                            <option value="list">省紙模式 (列表清單)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold mb-1 text-gray-700">時間範圍：</label>
+                        <select id="print-range" class="w-full p-2 border border-gray-300 rounded text-sm">
+                            <option value="7">未來 7 天</option>
+                            <option value="30">未來 30 天</option>
+                            <option value="60">未來 60 天</option>
+                            <option value="365">直到退休日 (最多 1 年)</option>
+                        </select>
+                        <p class="text-xs text-red-500 mt-1">* 選擇「直到退休日」若日期過長，系統將限制列印一年份以避免當機。</p>
+                    </div>
+                </div>
+
+                <div class="flex justify-between mt-4">
+                     <button onclick="togglePrintModal()" class="px-3 py-1 text-gray-500 hover:text-gray-700 text-sm">取消</button>
+                    <button onclick="executePrint()" class="px-4 py-2 bg-retro-ink text-white font-bold rounded shadow-md hover:bg-black transition text-sm flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                        </svg>
+                        開始列印
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Hidden Print Area -->
+    <div id="print-area" class="hidden"></div>
+
+    <script>
+        // --- Data & State ---
+        let retirementDate = localStorage.getItem('retirementDate');
+        let teacherName = localStorage.getItem('teacherName') || "";
+        let currentViewDate = new Date(); 
+        let isAnimating = false;
+
+        // --- DOM Elements ---
+        const els = {
+            wrapper: document.getElementById('calendar-wrapper'),
+            content: document.getElementById('calendar-content'),
+            modal: document.getElementById('settings-modal'),
+            printModal: document.getElementById('print-modal'),
+            printArea: document.getElementById('print-area'),
+            inputDate: document.getElementById('retire-date-input'),
+            inputName: document.getElementById('teacher-name-input'),
+            title: document.getElementById('calendar-title'),
+            rocYear: document.getElementById('roc-year'),
+            monthNum: document.getElementById('month-num'),
+            dayNum: document.getElementById('day-num'),
+            weekDay: document.getElementById('week-day'),
+            lunarDate: document.getElementById('lunar-date'),
+            sidebarCountdown: document.getElementById('countdown-days-sidebar'),
+            detailCountdown: document.getElementById('countdown-detail'),
+            semesterDetail: document.getElementById('semester-detail'),
+            motto: document.getElementById('daily-motto'),
+            resetBtn: document.getElementById('reset-today-btn'),
+            printMode: document.getElementById('print-mode'),
+            printRange: document.getElementById('print-range')
+        };
+
+        const quotes = [
+            "學生虐我千百遍，我待退休如初戀。", "只要學生不尷尬，尷尬的就是老師。", "深呼吸，閉上眼，想想退休金。",
+            "今日宜：佛系教學。忌：動怒傷肝。", "沒有教不會的學生，只有還沒退休的老師。", "鐘聲響起的那一刻，就是自由的試用期。",
+            "粉筆灰是歲月的痕跡，退休金是歲月的餽贈。", "班級經營的最高境界：只要大家都活著就好。", "再撐一下，寒暑假要來了，退休還會遠嗎？",
+            "遇到恐龍家長？沒關係，你快進化成退休神獸了。", "週一症候群？看一眼退休倒數，瞬間治癒。", "學生的作業永遠改不完，但退休日子數得完。",
+            "保持微笑，這不是職業假笑，是想著退休金的姨母笑。", "不要生氣，生氣會長皺紋，退休後拍照不好看。", "今天的喉嚨痛，是為了明日在公園高歌。",
+            "教育是良心事業，退休是開心事業。", "問君能有幾多愁？恰似一江春水向東流... 流向退休的彼岸。", "別人的老闆是慣老闆，我們的老闆是... 教育部？",
+            "這堂課聽不懂沒關係，老師也快聽不懂自己講什麼了。", "人生短短幾個秋，不醉不罷休... 啊不，是不退休不罷休。", "現在的養生，是為了退休後的浪流連。",
+            "作業改不完？沒關係，明天再改。明天也改不完？那就後天。", "退休不是結束，而是另一場偉大冒險的開始。", "再堅持一下，你的退休金正在銀行裡做暖身操。",
+            "世界那麼大，退休後再去看看。", "每個乖巧的學生背後，都有一個努力忍耐的老師。", "今日事今日畢，明日事... 退休再說。",
+            "老師的心臟都是特製的，越接近退休越強大。", "佛系老師三連：都行、可以、沒關係。", "下課鐘聲是世界上最悅耳的音樂。",
+            "放學那一刻，老師跑得比學生還快。", "不要問我為什麼教書，我是為了退休金來的。", "忍一時風平浪靜，退一步退休海闊天空。",
+            "你的每一次深呼吸，都是在為退休生活積攢運氣。", "黑板擦掉的是粉筆字，擦不掉的是想退休的心。", "學生可以畢業，老師只能退休。",
+            "再忙，也要記得喝杯茶，反正事情做不完。", "薪水是國家的，身體是自己的。", "數著數著，日子就近了。",
+            "為了美好的退休生活，今天也要優雅地過。", "工作只是過客，退休才是歸人。", "只要心中有退休，每天都是星期五。",
+            "退休倒數計時，是世界上最精準的時鐘。", "看著窗外的鳥，想著未來的島。", "每天早上叫醒我的不是鬧鐘，是退休的夢想。",
+            "教學熱忱就像手機電量，一到下午就紅字了。", "遇到調皮學生，默念三遍：他是小孩，我是大人。", "遇到不講理家長，默念三遍：我有退休金，他沒有。",
+            "每改一本作業，距離退休就少了一步。", "辦公室的八卦，是退休前的調味劑。", "行政工作像座山，翻過去就是退休海。",
+            "開會的時候，靈魂已經去環遊世界了。", "監考的時候，是思考退休清單的最佳時刻。", "校慶運動會，老師只想找個角落喝咖啡。",
+            "家長日，演技大爆發的時刻。", "寒假是小確幸，暑假是大確幸，退休是終極幸福。", "颱風假是天上掉下來的禮物，退休是國家給的禮物。",
+            "教書久了，脾氣變好了，血壓變高了。", "為了不讓未來的自己後悔，現在要好好保養喉嚨。", "學生的成績是浮雲，老師的健康是黃金。",
+            "不要跟成績過不去，也不要跟自己過不去。", "每個老師心裡，都住著一個想去流浪的靈魂。", "退休後的廣場舞，C位已經預訂好了。",
+            "現在的努力，都是為了將來在公園下棋能贏。", "教書是一場修行，退休是得道成仙。", "看到學生有成就很高興，看到退休金入帳更高興。",
+            "校長的話很長，但我離退休的日子變短了。", "研習時的點頭，不是贊同，是打瞌睡。", "教學觀摩，是一場華麗的表演。",
+            "每個學期末，都是一次重生。", "開學日，是渡劫的開始。", "結業式，是渡劫成功。", "想退休的心，藏得住眼神，藏不住嘴角。",
+            "退休不是夢，是正在進行的計畫。", "存錢的速度，要趕上想退休的速度。", "不要羨慕別人的工作，因為大家都在想退休。",
+            "今天的氣，留給明天的力氣去玩。", "學生不懂事是正常的，老師不退休是不正常的（誤）。", "黑板上的字，寫著寫著就變成「退休」兩個字。",
+            "講台站久了，腿會酸，心會飛。", "每一屆學生都是過客，只有退休金是真愛。", "不要把工作帶回家，把退休心情帶回家。",
+            "週末是短暫的充電，退休是永久的滿電。", "連假結束不憂鬱，因為離退休又近了三天。", "補課是為了還債，上班是為了退休。",
+            "不想上班的念頭，每天會出現一萬次。", "撐住，再撐幾年，你就是傳說中的退休人員。", "辦公桌上的日曆，是我的精神支柱。",
+            "看著倒數日曆，突然覺得這個班也沒那麼難帶。", "退休生活規劃好了嗎？第一件事：睡到自然醒。", "以後不用改作業，只改旅遊行程。",
+            "以後不用管秩序，只管要吃什麼。", "以後不用打鐘，只想去哪裡兜風。", "把講台留給年輕人，把世界留給自己。",
+            "退休那天，我要笑著走出校門，不帶走一片雲彩。", "現在的辛苦，都會變成未來的談資。", "再忍忍，你的自由號列車即將進站。",
+            "生活不止眼前的苟且，還有即將到來的退休。", "每天撕一張日曆，撕下的是束縛，露出的是自由。", "堅持住，我們這是在為國家培育棟樑... 順便等退休。"
+        ];
+
+        // --- Initialization ---
+        function init() {
+            renderCalendar(currentViewDate);
+            updateTitle();
+            updateMotto(currentViewDate);
+            
+            if (!retirementDate) {
+                toggleSettings();
+            } else {
+                updateCountdown(currentViewDate);
+            }
+
+            if(retirementDate) {
+                els.inputDate.value = retirementDate;
+            } else {
+                els.inputDate.valueAsDate = new Date(new Date().setFullYear(new Date().getFullYear() + 1));
+            }
+            els.inputName.value = teacherName;
+
+            document.addEventListener('keydown', (e) => {
+                if (els.modal.classList.contains('hidden') && els.printModal.classList.contains('hidden') && !isAnimating) {
+                    if (e.key === 'ArrowRight') changeDay(1);
+                    if (e.key === 'ArrowLeft') changeDay(-1);
+                }
+            });
+        }
+
+        // --- Navigation Logic ---
+        function changeDay(offset) {
+            if (isAnimating) return;
+            isAnimating = true;
+
+            const oldDate = new Date(currentViewDate);
+            currentViewDate.setDate(currentViewDate.getDate() + offset);
+
+            if (offset > 0) {
+                // Clone Old Date
+                const clone = els.content.cloneNode(true);
+                clone.classList.add('animating-clone', 'animate-tear-off');
+                clone.id = '';
+                els.wrapper.appendChild(clone);
+
+                // Update real content
+                renderAll(currentViewDate);
+
+                clone.addEventListener('animationend', () => {
+                    clone.remove();
+                    isAnimating = false;
+                });
+            } else {
+                // Update content first
+                renderAll(currentViewDate);
+
+                // Clone New Date (flying in)
+                const clone = els.content.cloneNode(true);
+                clone.classList.add('animating-clone', 'animate-paste-back');
+                clone.id = '';
+                els.wrapper.appendChild(clone);
+                
+                clone.addEventListener('animationend', () => {
+                    clone.remove();
+                    isAnimating = false;
+                });
+            }
+            
+            checkResetButton();
+        }
+
+        function resetToToday() {
+            if(isAnimating) return;
+            currentViewDate = new Date();
+            renderAll(currentViewDate);
+            checkResetButton();
+        }
+
+        function checkResetButton() {
+            const today = new Date();
+            const isToday = currentViewDate.toDateString() === today.toDateString();
+            if (isToday) {
+                els.resetBtn.classList.add('hidden');
+            } else {
+                els.resetBtn.classList.remove('hidden');
+            }
+        }
+
+        function renderAll(date) {
+            renderCalendar(date);
+            updateCountdown(date);
+            updateMotto(date);
+        }
+
+        // --- Core Functions ---
+        function updateTitle() {
+            els.title.textContent = (teacherName && teacherName.trim() !== "") ? 
+                `${teacherName} 老師的退休倒數日曆` : "退休倒數日曆";
+        }
+
+        function updateMotto(date) {
+            const seed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
+            const index = seed % quotes.length;
+            els.motto.textContent = quotes[index];
+        }
+
+        function getMottoForDate(date) {
+            const seed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
+            const index = seed % quotes.length;
+            return quotes[index];
+        }
+
+        function renderCalendar(date) {
+            const year = date.getFullYear();
+            const month = date.getMonth() + 1;
+            const day = date.getDate();
+            const dayOfWeek = date.getDay();
+            
+            els.rocYear.textContent = year - 1911;
+            els.monthNum.textContent = month;
+            els.dayNum.textContent = day;
+
+            const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+            els.weekDay.textContent = weekdays[dayOfWeek];
+
+            // Consistent Class Names for Real DOM and Clone
+            const baseDayNumClass = "text-[6rem] leading-none font-black drop-shadow-sm font-sans scale-y-110 -mb-1";
+            const baseWeekDayClass = "text-xl font-bold mt-0 border-2 rounded-full w-10 h-10 flex items-center justify-center";
+
+            if (dayOfWeek === 0) { // Sun
+                els.dayNum.className = `${baseDayNumClass} text-retro-red`;
+                els.weekDay.className = `${baseWeekDayClass} text-retro-red border-retro-red`;
+            } else if (dayOfWeek === 6) { // Sat
+                els.dayNum.className = `${baseDayNumClass} text-retro-green`;
+                els.weekDay.className = `${baseWeekDayClass} text-retro-green border-retro-green`;
+            } else { // Weekday
+                els.dayNum.className = `${baseDayNumClass} text-retro-ink`;
+                els.weekDay.className = `${baseWeekDayClass} text-retro-ink border-retro-ink`;
+            }
+
+            const rocYear = year - 1911;
+            const rocDateString = `民國${rocYear}年${month}月${day}日`;
+            const today = new Date();
+            const isRealToday = date.toDateString() === today.toDateString();
+            els.lunarDate.textContent = rocDateString + (isRealToday ? " (今日)" : "");
+        }
+
+        function updateCountdown(currentDateContext) {
+            if (!retirementDate) return;
+            const now = new Date(currentDateContext);
+            now.setHours(0,0,0,0);
+            const target = new Date(retirementDate);
+            target.setHours(0,0,0,0);
+            const diffTime = target - now;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            if (diffDays <= 0) {
+                els.sidebarCountdown.textContent = "已退休";
+                els.detailCountdown.innerHTML = "<span class='text-retro-red'>恭喜您！這天已經退休！</span>";
+                els.semesterDetail.textContent = "享受自由自在的人生吧！";
+                return;
+            }
+
+            els.sidebarCountdown.textContent = `剩餘${diffDays}天`;
+
+            let y = target.getFullYear() - now.getFullYear();
+            let m = target.getMonth() - now.getMonth();
+            let d = target.getDate() - now.getDate();
+
+            if (d < 0) {
+                m--;
+                const prevMonth = new Date(target.getFullYear(), target.getMonth(), 0);
+                d += prevMonth.getDate();
+            }
+            if (m < 0) {
+                y--;
+                m += 12;
+            }
+
+            let detailText = "還有 ";
+            if (y > 0) detailText += `<span class="text-retro-red text-lg">${y}</span> 年 `;
+            if (m > 0) detailText += `<span class="text-retro-red text-lg">${m}</span> 個月 `;
+            detailText += `<span class="text-retro-red text-lg">${d}</span> 天`;
+            els.detailCountdown.innerHTML = detailText;
+            
+            const semesterInfo = calculateSemesters(now, target);
+            els.semesterDetail.innerHTML = `再奮鬥 <b>${semesterInfo}</b> 就自由了！`;
+        }
+
+        function calculateSemesters(start, end) {
+            function getSemesterCode(date) {
+                const m = date.getMonth();
+                const y = date.getFullYear();
+                if (m >= 1 && m <= 6) return `${y}-2`; 
+                if (m === 0) return `${y-1}-1`; 
+                return `${y}-1`;
+            }
+            const startSem = getSemesterCode(start);
+            const endSem = getSemesterCode(end);
+            if (startSem === endSem) return "1 個學期 (當前)";
+
+            let sCode = startSem;
+            let semCount = 0;
+            let [currY, currS] = sCode.split('-').map(Number);
+            const endY = end.getFullYear();
+
+            while (true) {
+                semCount++;
+                const currentCode = `${currY}-${currS}`;
+                if (currentCode === endSem) break;
+                if (currS === 1) { currS = 2; } 
+                else { currY += 1; currS = 1; }
+                if (currY > endY + 2) break;
+            }
+            return `${semCount} 個學期`;
+        }
+
+        // --- Interaction ---
+        function toggleSettings() {
+            els.modal.classList.toggle('hidden');
+        }
+        function togglePrintModal() {
+            els.printModal.classList.toggle('hidden');
+        }
+
+        function saveSettings() {
+            const dateVal = els.inputDate.value;
+            const nameVal = els.inputName.value;
+            if (dateVal) {
+                retirementDate = dateVal;
+                teacherName = nameVal;
+                localStorage.setItem('retirementDate', retirementDate);
+                localStorage.setItem('teacherName', teacherName);
+                currentViewDate = new Date();
+                renderAll(currentViewDate);
+                updateTitle();
+                checkResetButton();
+                toggleSettings();
+            }
+        }
+
+        // --- Print Logic ---
+        function executePrint() {
+            const mode = els.printMode.value;
+            const range = els.printRange.value;
+            
+            els.printArea.innerHTML = '';
+            
+            let startDate = new Date(currentViewDate); // Default for single
+            if (mode !== 'current') {
+                startDate = new Date(); // Grid/List starts from Today usually, or Current View? Let's do Today for usefulness.
+                // Or respect user's view? Let's use current view as start so they can print future months.
+                startDate = new Date(currentViewDate);
+            }
+
+            let endDate = new Date(startDate);
+            if (mode === 'current') {
+                endDate = startDate;
+            } else {
+                let limit = parseInt(range);
+                // Hard limit 365 days
+                if (limit > 365) limit = 365;
+                endDate.setDate(endDate.getDate() + limit - 1);
+                
+                // Cap at retirement date if closer
+                if (retirementDate) {
+                    const rDate = new Date(retirementDate);
+                    if (rDate < endDate && rDate >= startDate) {
+                        endDate = rDate;
+                    }
+                }
+            }
+
+            if (mode === 'grid') {
+                generateGridPrint(startDate, endDate);
+            } else if (mode === 'list') {
+                generateListPrint(startDate, endDate);
+            } else {
+                // For current view, we don't need to generate, just print the body but hide wrappers.
+                // However, our CSS logic hides .calendar-container and shows #print-area.
+                // So we should clone the current card to #print-area.
+                const clone = els.content.cloneNode(true);
+                // Ensure styles (width) fit paper
+                clone.style.maxWidth = '100%';
+                clone.style.border = '1px solid #ccc';
+                els.printArea.className = 'block p-4';
+                els.printArea.appendChild(clone);
+            }
+
+            togglePrintModal();
+            setTimeout(() => {
+                window.print();
+                // Clear after print
+                // els.printArea.innerHTML = ''; // Keep for debugging or clearing later?
+            }, 500);
+        }
+
+        function generateGridPrint(start, end) {
+            els.printArea.className = 'print-grid';
+            let curr = new Date(start);
+            const rDateObj = retirementDate ? new Date(retirementDate) : null;
+            if(rDateObj) rDateObj.setHours(0,0,0,0);
+
+            while (curr <= end) {
+                // Logic to build a card string
+                const y = curr.getFullYear() - 1911;
+                const m = curr.getMonth() + 1;
+                const d = curr.getDate();
+                const dow = curr.getDay();
+                const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+                const weekChar = weekdays[dow];
+                
+                let colorClass = "text-retro-ink";
+                if (dow === 0) colorClass = "text-retro-red";
+                if (dow === 6) colorClass = "text-retro-green";
+
+                // Countdown
+                let countdownText = "";
+                if (rDateObj) {
+                    const diff = Math.ceil((rDateObj - curr) / (1000 * 60 * 60 * 24));
+                    countdownText = diff > 0 ? `剩餘 ${diff} 天` : "已退休";
+                }
+
+                const motto = getMottoForDate(curr);
+
+                const cardHtml = `
+                    <div class="print-card">
+                        <div class="text-center border-b pb-1 w-full text-xs text-gray-500">
+                            民國${y}年 ${m}月${d}日
+                        </div>
+                        <div class="flex-1 flex flex-col items-center justify-center">
+                            <div class="text-6xl font-black ${colorClass}">${d}</div>
+                            <div class="text-xl font-bold ${colorClass} border-2 border-current rounded-full w-8 h-8 flex items-center justify-center mt-1">${weekChar}</div>
+                        </div>
+                        <div class="text-center w-full mt-2">
+                             <div class="text-sm font-bold text-gray-700 mb-1">${motto}</div>
+                             <div class="text-xs bg-gray-100 rounded py-1 font-bold text-retro-green">${countdownText}</div>
+                        </div>
+                    </div>
+                `;
+                els.printArea.insertAdjacentHTML('beforeend', cardHtml);
+                
+                curr.setDate(curr.getDate() + 1);
+            }
+        }
+
+        function generateListPrint(start, end) {
+            els.printArea.className = 'block p-4';
+            let html = `
+                <h2 class="text-xl font-bold mb-4 text-center">退休倒數清單 (${start.toLocaleDateString()} - ${end.toLocaleDateString()})</h2>
+                <table class="print-list">
+                    <thead>
+                        <tr>
+                            <th>日期</th>
+                            <th>星期</th>
+                            <th>倒數天數</th>
+                            <th>備註/每日一句</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            let curr = new Date(start);
+            const rDateObj = retirementDate ? new Date(retirementDate) : null;
+            if(rDateObj) rDateObj.setHours(0,0,0,0);
+
+            while (curr <= end) {
+                const dateStr = `${curr.getFullYear()-1911}/${curr.getMonth()+1}/${curr.getDate()}`;
+                const dow = curr.getDay();
+                const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+                
+                let rowStyle = "";
+                if (dow === 0 || dow === 6) rowStyle = "background-color: #fafafa;";
+
+                let countdownText = "-";
+                if (rDateObj) {
+                    const diff = Math.ceil((rDateObj - curr) / (1000 * 60 * 60 * 24));
+                    countdownText = diff;
+                }
+                const motto = getMottoForDate(curr);
+
+                html += `
+                    <tr style="${rowStyle}">
+                        <td>${dateStr}</td>
+                        <td>${weekdays[dow]}</td>
+                        <td style="font-weight:bold; color:#009e46;">${countdownText}</td>
+                        <td style="color:#666;">${motto}</td>
+                    </tr>
+                `;
+                curr.setDate(curr.getDate() + 1);
+            }
+            html += `</tbody></table>`;
+            els.printArea.innerHTML = html;
+        }
+
+        // Init
+        init();
+
+    </script>
+</body>
+</html>
