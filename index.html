@@ -615,31 +615,59 @@
         }
 
         function calculateSemesters(start, end) {
-            function getSemesterCode(date) {
-                const m = date.getMonth();
-                const y = date.getFullYear();
-                if (m >= 1 && m <= 6) return `${y}-2`; 
-                if (m === 0) return `${y-1}-1`; 
-                return `${y}-1`;
+            // Helper function to convert a date to an absolute semester number
+            // Let's establish a base year to make math easy, e.g., Year 0
+            // Sem 1 is Aug - Jan (we will map Jan to the previous year's Sem 1)
+            // Sem 2 is Feb - Jul
+            function getAbsoluteSemester(date) {
+                const year = date.getFullYear();
+                const month = date.getMonth() + 1; // 1-12
+                
+                if (month >= 8 && month <= 12) {
+                    // Aug to Dec -> Year's Sem 1
+                    return (year * 2) + 1;
+                } else if (month === 1) {
+                    // Jan -> Previous Year's Sem 1
+                    return ((year - 1) * 2) + 1;
+                } else {
+                    // Feb to Jul -> Year's Sem 2
+                    // Note: Technically this is the 2nd semester of the Academic Year that started previous Aug.
+                    // But for absolute counting, we just need a sequential number.
+                    // Let's use Academic Year logic for clarity:
+                    // Academic Year X starts Aug of Year X, ends Jul of Year X+1
+                    // So Feb-Jul is Sem 2 of Academic Year X-1.
+                    return ((year - 1) * 2) + 2; 
+                }
             }
-            const startSem = getSemesterCode(start);
-            const endSem = getSemesterCode(end);
-            if (startSem === endSem) return "1 個學期 (當前)";
 
-            let sCode = startSem;
-            let semCount = 0;
-            let [currY, currS] = sCode.split('-').map(Number);
-            const endY = end.getFullYear();
+            const startSemAbs = getAbsoluteSemester(start);
+            const endSemAbs = getAbsoluteSemester(end);
 
-            while (true) {
-                semCount++;
-                const currentCode = `${currY}-${currS}`;
-                if (currentCode === endSem) break;
-                if (currS === 1) { currS = 2; } 
-                else { currY += 1; currS = 1; }
-                if (currY > endY + 2) break;
+            // If start and end are in the same absolute semester
+            if (startSemAbs === endSemAbs) {
+                return "1 個學期 (當前)";
             }
-            return `${semCount} 個學期`;
+
+            // Calculate the strict difference in semesters.
+            // e.g., if start is Sem 1 and end is Sem 2 of same Academic Year, diff is 1.
+            // We usually say "I have X semesters left". 
+            // If I am in Sem 1 right now, and I retire at the end of Sem 2.
+            // That means I have this current one, plus the next one -> 2 semesters.
+            // Absolute difference gives us the number of *boundaries* crossed.
+            // If start is 2025 Sem 1 (val: 4051) and end is 2025 Sem 2 (val: 4052), diff = 1.
+            // User usually considers "this semester" as 1, plus any full future ones.
+            // So total semesters touched = end - start + 1.
+            
+            const semDiff = endSemAbs - startSemAbs;
+            
+            if (semDiff < 0) return "0 個學期"; // Fallback, shouldn't happen if end > start
+            
+            // "再奮鬥 X 個學期"
+            // If it's the middle of Sem 1, and I retire middle of Sem 2. It's technically "parts" of 2 semesters.
+            // Standard convention is to count the current one as 1, and the target one as 1.
+            const totalSemesters = semDiff + 1;
+            
+            return `${totalSemesters} 個學期`;
         }
 
         // --- Interaction ---
